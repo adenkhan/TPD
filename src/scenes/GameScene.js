@@ -914,7 +914,7 @@ export default class GameScene extends Phaser.Scene {
         this.selectedUnit = unit;
         if (unit.visual) unit.visual.setAlpha(0.6);
 
-        this.fsm.transition(GameStates.PLAYER_SELECT_UNIT);
+        this.fsm.transition(GameStates.PLAYER_SKIRMISH_MOVE);
         this.showMoveHighlights(unit);
         this.showAttackHighlights(unit);
     }
