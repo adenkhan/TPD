@@ -27,6 +27,7 @@ export default class UIScene extends Phaser.Scene {
         this.createGameOverModal();
         this.createSettingsModal();
         this.createTutorial();
+        this.createInspectorPanel();
 
         // Show Tutorial if first time
         if (!localStorage.getItem('tutorialSeen')) {
@@ -103,8 +104,7 @@ export default class UIScene extends Phaser.Scene {
             "1. SELECT UNIT: Click your units to see movement range.\n" +
             "2. MOVE: Click blue hexes to move.\n" +
             "3. ATTACK: Click red hexes (adjacent only) to attack.\n" +
-            "4. CARDS: Play 1 card per turn for special effects.\n" +
-            "5. WIN: Reach 8 Influence or kill Enemy Leader.";
+            "4. WIN: Reach 8 Influence or kill Enemy Leader.";
 
         const text = this.add.text(0, -20, content, {
             fontSize: '18px', fill: '#fff', lineSpacing: 10, wordWrap: { width: 450 }
@@ -540,5 +540,49 @@ export default class UIScene extends Phaser.Scene {
                 g.fillCircle(x, y, 5);
         }
         container.add(g);
+    }
+
+    createInspectorPanel() {
+        const x = 20;
+        const y = this.cameras.main.height - 180;
+        const w = 220;
+        const h = 160;
+
+        this.inspectorContainer = this.add.container(x, y).setVisible(false);
+
+        const bg = this.add.rectangle(0, 0, w, h, 0x000000, 0.8).setOrigin(0).setStrokeStyle(2, 0x888888);
+        const title = this.add.text(10, 10, 'UNIT INSPECTOR', { fontSize: '14px', fill: '#888' });
+
+        this.inspectorName = this.add.text(10, 30, '', { fontSize: '20px', fill: '#fff', fontStyle: 'bold' });
+        this.inspectorStats = this.add.text(10, 60, '', { fontSize: '16px', fill: '#ccc', lineSpacing: 5 });
+        this.inspectorPerk = this.add.text(10, 120, '', { fontSize: '14px', fill: '#ffff00', wordWrap: { width: w - 20 } });
+
+        this.inspectorContainer.add([bg, title, this.inspectorName, this.inspectorStats, this.inspectorPerk]);
+    }
+
+    showUnitDetails(unit) {
+        if (!this.inspectorContainer) return;
+        this.inspectorContainer.setVisible(true);
+
+        // Name
+        const factionName = unit.faction === 'A' ? "Civil Alliance" : "Popular Front";
+        this.inspectorName.setText(`${factionName} ${unit.type.toUpperCase()}`);
+        this.inspectorName.setColor(unit.faction === 'A' ? '#0088ff' : '#ff4444');
+
+        // Stats
+        this.inspectorStats.setText(
+            `HP: ${unit.hp}/${unit.maxHp}\n` +
+            `ATK: ${unit.atk}\n` +
+            `MOVE: ${unit.move}`
+        );
+
+        // Perk
+        let perkDesc = "";
+        switch (unit.perk) {
+            case 'skirmisher': perkDesc = "Skirmisher: Attack after move."; break;
+            case 'anchor': perkDesc = "Anchor: Defensive bonus on control."; break;
+            case 'command': perkDesc = "Command: Draw cards."; break;
+        }
+        this.inspectorPerk.setText(`[${unit.perk.toUpperCase()}]\n${perkDesc}`);
     }
 }

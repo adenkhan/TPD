@@ -53,8 +53,8 @@ export class MapGenerator {
         allCoords.forEach(c => tiles.set(`${c.q},${c.r}`, 'neutral'));
 
         // 2. Control Points (Fixed)
-        // User requested: (0,0) and (3,-3)
-        const controlCoords = [{ q: 0, r: 0 }, { q: 3, r: -3 }];
+        // User requested: Single Control Zone at (0,0)
+        const controlCoords = [{ q: 0, r: 0 }];
         controlCoords.forEach(c => tiles.set(`${c.q},${c.r}`, 'control'));
 
         // 3. Targets
@@ -159,9 +159,8 @@ export class MapGenerator {
 
     validateMap(tiles) {
         // 1. Control Zones accessible?
-        // Check neighbors of (0,0) and (3,-3)
-        // Ensure at least 2 non-blocked neighbors for each
-        const controls = [{ q: 0, r: 0 }, { q: 3, r: -3 }];
+        // Check neighbor of (0,0)
+        const controls = [{ q: 0, r: 0 }];
         for (const c of controls) {
             const neighbors = HexUtils.hexNeighbors(c.q, c.r);
             let free = 0;
@@ -189,10 +188,6 @@ export class MapGenerator {
         // Path to Main Control (0,0)
         if (!this.bfsPathExists(playerStart, { q: 0, r: 0 }, tiles)) return false;
         if (!this.bfsPathExists(enemyStart, { q: 0, r: 0 }, tiles)) return false;
-
-        // Path to Secondary Control (3, -3)
-        if (!this.bfsPathExists(playerStart, { q: 3, r: -3 }, tiles)) return false;
-        if (!this.bfsPathExists(enemyStart, { q: 3, r: -3 }, tiles)) return false;
 
         return true;
     }
@@ -230,7 +225,6 @@ export class MapGenerator {
         all.forEach(c => tiles.set(`${c.q},${c.r}`, 'neutral'));
 
         tiles.set("0,0", 'control');
-        tiles.set("3,-3", 'control');
 
         // Simple Ring of cover
         const ring3 = all.filter(c => HexUtils.hexDistance(c.q, c.r, 0, 0) === 3);

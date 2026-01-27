@@ -683,6 +683,9 @@ export default class GameScene extends Phaser.Scene {
 
         // --- NORMAL SELECTION / MOVE / ATTACK ---
         if (unit) {
+            // ALWAYS show details when clicking a unit
+            if (this.uiScene) this.uiScene.showUnitDetails(unit);
+
             if (unit.faction === this.playerFaction) {
                 this.selectUnit(unit);
             } else {
@@ -1122,7 +1125,7 @@ export default class GameScene extends Phaser.Scene {
 
             this.time.delayedCall(100, () => {
                 // Check enemy influence
-                const controlKeys = ["0,0", "2,-2"];
+                const controlKeys = ["0,0"];
                 let occupiedCount = 0;
                 controlKeys.forEach(key => {
                     const u = this.units.get(key);
@@ -1132,7 +1135,7 @@ export default class GameScene extends Phaser.Scene {
                 });
 
                 if (occupiedCount > 0) {
-                    const loss = occupiedCount === 2 ? 3 : 1;
+                    const loss = 1; // Single zone = 1 point loss
                     this.influence -= loss;
                     this.showFloatingText(this.boardOriginX, this.boardOriginY, `-${loss} Influence`, '#ff0000');
                 }
@@ -1531,7 +1534,7 @@ export default class GameScene extends Phaser.Scene {
 
         // Scoring
         let gain = 0;
-        const controls = [{ q: 0, r: 0 }, { q: 3, r: -3 }];
+        const controls = [{ q: 0, r: 0 }];
         let held = 0;
 
         controls.forEach(c => {
