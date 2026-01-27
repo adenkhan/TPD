@@ -1100,6 +1100,9 @@ export default class GameScene extends Phaser.Scene {
     }
 
     startEnemyTurn() {
+        if (this.isProcessingEnemy) return; // Lock to prevent double entry
+        this.isProcessingEnemy = true;
+
         this.fsm.transition(GameStates.ENEMY_TURN);
         this.updateUI();
 
@@ -1114,10 +1117,10 @@ export default class GameScene extends Phaser.Scene {
 
         console.log(`Enemy Turn: Drawing ${card.name} (${card.actionKey})`);
 
-        this.time.delayedCall(300, () => {
+        this.time.delayedCall(100, () => {
             this.resolveEnemyAction(card);
 
-            this.time.delayedCall(300, () => {
+            this.time.delayedCall(100, () => {
                 // Check enemy influence
                 const controlKeys = ["0,0", "2,-2"];
                 let occupiedCount = 0;
@@ -1134,6 +1137,7 @@ export default class GameScene extends Phaser.Scene {
                     this.showFloatingText(this.boardOriginX, this.boardOriginY, `-${loss} Influence`, '#ff0000');
                 }
 
+                this.isProcessingEnemy = false; // Unlock
                 this.startPlayerTurn();
             });
         });
@@ -1259,7 +1263,8 @@ export default class GameScene extends Phaser.Scene {
                         const db = HexUtils.hexDistance(b.q, b.r, 0, 0);
                         return da - db;
                     });
-                    const toMove = sorted.slice(0, 2);
+                    // Changed to move only 1 unit to prevent "multiple turns" feel
+                    const toMove = sorted.slice(0, 1);
                     toMove.forEach(u => {
                         const path = this.findPath(u, 0, 0);
                         if (path && path.length > 0) moveUnit(u, path[0].q, path[0].r);

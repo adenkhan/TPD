@@ -1,4 +1,6 @@
 
+import { UNIT_STATS } from '../data/units.js';
+
 export default class CompositionScene extends Phaser.Scene {
     constructor() {
         super('CompositionScene');
@@ -46,28 +48,28 @@ export default class CompositionScene extends Phaser.Scene {
 
         // Panel
         const panelW = 800;
-        const panelH = 600;
+        const panelH = 650; // Increased height for stats
         const panel = this.add.rectangle(this.center.x, this.center.y, panelW, panelH, 0x222222);
         panel.setStrokeStyle(2, 0x444444);
     }
 
     createHeader() {
-        this.add.text(this.center.x, 100, "Assemble Your Force", {
+        this.add.text(this.center.x, 80, "Assemble Your Force", {
             fontSize: '40px',
             fontFamily: 'Arial',
             color: '#ffffff',
             fontStyle: 'bold'
         }).setOrigin(0.5);
 
-        this.pointsText = this.add.text(this.center.x, 160, "Points: 0 / 16", {
+        this.pointsText = this.add.text(this.center.x, 130, "Points: 0 / 16", {
             fontSize: '28px',
             color: '#aaaaaa'
         }).setOrigin(0.5);
     }
 
     createUnitControls() {
-        const startY = 250;
-        const gapY = 80;
+        const startY = 220;
+        const gapY = 110; // Increased gap for stats
 
         // Leader (Fixed)
         this.createRow(startY, "Leader", 4, 'leader', true);
@@ -80,23 +82,43 @@ export default class CompositionScene extends Phaser.Scene {
     }
 
     createRow(y, name, cost, type, isFixed) {
-        const xStart = this.center.x - 200;
+        const xStart = this.center.x - 250;
 
         // Name & Cost
-        this.add.text(xStart, y, `${name} (${cost} pts)`, { fontSize: '24px', color: '#fff' }).setOrigin(0, 0.5);
+        this.add.text(xStart, y, `${name} (${cost} pts)`, { fontSize: '24px', color: '#fff', fontStyle: 'bold' }).setOrigin(0, 0.5);
+
+        // Stats Display
+        const stats = UNIT_STATS['A'][type]; // Default to faction A stats
+        const perkDesc = this.getPerkDescription(stats.perk);
+        const statText = `HP:${stats.hp} | ATK:${stats.atk} | MV:${stats.move} | [${stats.perk.toUpperCase()}]: ${perkDesc}`;
+
+        this.add.text(xStart, y + 30, statText, {
+            fontSize: '16px',
+            color: '#aaaaaa',
+            fontStyle: 'italic'
+        }).setOrigin(0, 0.5);
 
         if (isFixed) {
-            this.add.text(xStart + 300, y, "1 (Fixed)", { fontSize: '24px', color: '#888' }).setOrigin(0.5);
+            this.add.text(xStart + 350, y, "1 (Fixed)", { fontSize: '24px', color: '#888' }).setOrigin(0.5);
             return;
         }
 
         // Controls
-        const minusBtn = this.createButton(xStart + 250, y, "-", () => this.modifyUnit(type, -1));
-        const countText = this.add.text(xStart + 300, y, "0", { fontSize: '24px', color: '#fff' }).setOrigin(0.5);
-        const plusBtn = this.createButton(xStart + 350, y, "+", () => this.modifyUnit(type, 1));
+        const minusBtn = this.createButton(xStart + 300, y, "-", () => this.modifyUnit(type, -1));
+        const countText = this.add.text(xStart + 350, y, "0", { fontSize: '24px', color: '#fff' }).setOrigin(0.5);
+        const plusBtn = this.createButton(xStart + 400, y, "+", () => this.modifyUnit(type, 1));
 
         // Store refs to update
         this[`${type}CountText`] = countText;
+    }
+
+    getPerkDescription(perk) {
+        switch (perk) {
+            case 'skirmisher': return "Attack after move";
+            case 'anchor': return "Bonus DEF on Control";
+            case 'command': return "Draw card if hand low";
+            default: return "";
+        }
     }
 
     createButton(x, y, label, callback) {
