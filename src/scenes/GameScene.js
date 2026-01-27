@@ -48,9 +48,10 @@ export default class GameScene extends Phaser.Scene {
             this.input.on('pointerdown', this.onPointerDown, this);
             this.input.on('pointermove', this.onPointerMove, this);
 
-            // Launch UI Scene in parallel
             this.scene.launch('UIScene');
             this.uiScene = this.scene.get('UIScene');
+            this.scene.bringToTop('UIScene'); // FORCE TOP
+            console.log("GameScene: Launched UI Scene and brought to top.");
 
             this.placedUnitsHistory = [];
             this.fsm = new StateMachine(GameStates.PLAYER_SELECT_UNIT, this);
@@ -684,6 +685,7 @@ export default class GameScene extends Phaser.Scene {
         // --- NORMAL SELECTION / MOVE / ATTACK ---
         if (unit) {
             // ALWAYS show details when clicking a unit
+            console.log("GameScene: Clicked Unit", unit.id, unit.type);
             if (this.uiScene) this.uiScene.showUnitDetails(unit);
 
             if (unit.faction === this.playerFaction) {

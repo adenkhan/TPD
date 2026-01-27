@@ -543,26 +543,28 @@ export default class UIScene extends Phaser.Scene {
     }
 
     createInspectorPanel() {
-        const x = 20;
-        const y = this.scale.height - 180;
+        const x = 300; // Debug Position
+        const y = 300;
         const w = 220;
         const h = 160;
 
         this.inspectorContainer = this.add.container(x, y).setVisible(false).setDepth(1100);
 
-        const bg = this.add.rectangle(0, 0, w, h, 0x000000, 0.9).setOrigin(0).setStrokeStyle(2, 0x888888);
-        const title = this.add.text(10, 10, 'UNIT INSPECTOR', { fontSize: '14px', fill: '#888' });
+        // DEBUG: Red background
+        const bg = this.add.rectangle(0, 0, w, h, 0xff0000, 0.9).setOrigin(0).setStrokeStyle(2, 0xffffff);
+        const title = this.add.text(10, 10, 'UNIT INSPECTOR (DEBUG)', { fontSize: '14px', fill: '#fff' });
 
         this.inspectorName = this.add.text(10, 30, '', { fontSize: '20px', fill: '#fff', fontStyle: 'bold' });
-        this.inspectorStats = this.add.text(10, 60, '', { fontSize: '16px', fill: '#ccc', lineSpacing: 5 });
+        this.inspectorStats = this.add.text(10, 60, '', { fontSize: '16px', fill: '#fff', lineSpacing: 5 });
         this.inspectorPerk = this.add.text(10, 120, '', { fontSize: '14px', fill: '#ffff00', wordWrap: { width: w - 20 } });
 
         this.inspectorContainer.add([bg, title, this.inspectorName, this.inspectorStats, this.inspectorPerk]);
-        console.log("Inspector Panel Created at", x, y);
+        console.log("Inspector Panel Created at", x, y, "Depth:", this.inspectorContainer.depth);
     }
 
     showUnitDetails(unit) {
-        if (!this.inspectorContainer) return;
+        console.log("UIScene: showUnitDetails called for", unit.type);
+        if (!this.inspectorContainer) { console.error("Missing Inspector Container"); return; }
         this.inspectorContainer.setVisible(true);
 
         // Name
