@@ -41,6 +41,7 @@ export default class CompositionScene extends Phaser.Scene {
         this.createStartButton();
 
         this.updateUI();
+        this.createBriefingModal();
     }
 
     createBackground() {
@@ -217,5 +218,56 @@ export default class CompositionScene extends Phaser.Scene {
         this.registry.set('enemyComposition', enemyComp);
 
         this.scene.start('GameScene');
+    }
+
+    createBriefingModal() {
+        const container = this.add.container(0, 0);
+
+        // Overlay
+        const overlay = this.add.rectangle(0, 0, this.width, this.height, 0x000000, 0.95).setOrigin(0).setInteractive();
+        container.add(overlay);
+
+        // Panel
+        const panelW = 900;
+        const panelH = 500;
+        const panel = this.add.rectangle(this.center.x, this.center.y, panelW, panelH, 0x111111).setStrokeStyle(4, 0x0088ff);
+        container.add(panel);
+
+        // Title
+        const title = this.add.text(this.center.x, this.center.y - 180, "MISSION BRIEFING", {
+            fontSize: '48px', fontStyle: 'bold', fill: '#0088ff', stroke: '#ffffff', strokeThickness: 2
+        }).setOrigin(0.5);
+        container.add(title);
+
+        // Steps
+        const steps = [
+            "1. RECRUIT: Assemble your squad based on Points (16 max).",
+            "2. DEPLOY: Place your units on the blue starting hexes.",
+            "3. OBJECTIVE: Capture the YELLOW Control Point (0,0).",
+            "4. TERRAIN: Black = Blocked | Green = Cover (-1 Dmg).",
+            "5. VICTORY: Reach 8 Influence OR Eliminate Enemy Leader."
+        ];
+
+        let startY = this.center.y - 80;
+        steps.forEach((step, i) => {
+            const t = this.add.text(this.center.x - 400, startY + (i * 50), step, {
+                fontSize: '28px', fill: '#eeeeee', wordWrap: { width: 800 }
+            }).setOrigin(0, 0.5);
+            container.add(t);
+        });
+
+        // Close Button
+        const closeBtn = this.add.text(this.center.x, this.center.y + 180, "ACKNOWLEDGE", {
+            fontSize: '32px', backgroundColor: '#0088ff', padding: { x: 30, y: 15 }, fill: '#fff', fontStyle: 'bold'
+        })
+            .setOrigin(0.5)
+            .setInteractive({ useHandCursor: true })
+            .on('pointerdown', () => {
+                container.destroy();
+            })
+            .on('pointerover', () => closeBtn.setTint(0xdddddd))
+            .on('pointerout', () => closeBtn.clearTint());
+
+        container.add(closeBtn);
     }
 }
