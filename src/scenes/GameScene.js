@@ -1206,220 +1206,69 @@ export default class GameScene extends Phaser.Scene {
             if (defender.hp <= 0) this.killUnit(defender);
         };
 
+        /* SQUAD TURN UPDATE: Iterate all friends for every action */
         switch (card.actionKey) {
             case 'ADVANCE_CONTROL':
-                {
-                    let bestUnit = null;
-                    let bestPathLen = 999;
-                    let bestMove = null;
-
-                    friends.forEach(u => {
-                        const path = this.findPath(u, 0, 0);
-                        if (path && path.length < bestPathLen && path.length > 0) {
-                            bestUnit = u;
-                            bestPathLen = path.length;
-                            bestMove = path[0];
-                        }
-                    });
-
-                    if (bestUnit && bestMove) {
-                        const targetKey = `${bestMove.q},${bestMove.r}`;
-                        if (!this.units.has(targetKey)) {
-                            moveUnit(bestUnit, bestMove.q, bestMove.r);
-                        } else {
-                            const u = this.units.get(targetKey);
-                            if (u && u.faction === this.playerFaction) {
-                                attackUnit(bestUnit, u);
-                            }
-                        }
-                    }
-                }
-                break;
-            case 'FLANK':
-                {
-                    const sorted = [...friends].sort((a, b) => b.move - a.move);
-                    const unit = sorted[0];
-                    if (unit) {
-                        const neighbors = HexUtils.getReachableHexes(unit.q, unit.r, 1, this.getBlockedSet());
-                        neighbors.sort((a, b) => {
-                            const da = HexUtils.hexDistance(a.q, a.r, 0, 0);
-                            const db = HexUtils.hexDistance(b.q, b.r, 0, 0);
-                            if (da !== db) return da - db;
-                            const ta = this.tiles.get(`${a.q},${a.r}`);
-                            const tb = this.tiles.get(`${b.q},${b.r}`);
-                            const ca = ta.type === 'cover' ? 1 : 0;
-                            const cb = tb.type === 'cover' ? 1 : 0;
-                            return cb - ca;
-                        });
-
-                        if (neighbors.length > 0) moveUnit(unit, neighbors[0].q, neighbors[0].r);
-                    }
-                }
-                break;
-            case 'PRESS':
-                {
-                    const sorted = [...friends].sort((a, b) => {
-                        const da = HexUtils.hexDistance(a.q, a.r, 0, 0);
-                        const db = HexUtils.hexDistance(b.q, b.r, 0, 0);
-                        return da - db;
-                    });
-                    // Changed to move only 1 unit to prevent "multiple turns" feel
-                    const toMove = sorted.slice(0, 1);
-                    toMove.forEach(u => {
-                        const path = this.findPath(u, 0, 0);
-                        if (path && path.length > 0) moveUnit(u, path[0].q, path[0].r);
-                    });
-                }
-                break;
-            case 'STRIKE_WEAK':
-                {
-                    const sorted = [...friends].sort((a, b) => b.atk - a.atk);
-                    let acted = false;
-                    for (const u of sorted) {
-                        const adjEnemies = enemies.filter(e => HexUtils.hexDistance(u.q, u.r, e.q, e.r) <= 1);
-                        if (adjEnemies.length > 0) {
-                            adjEnemies.sort((a, b) => a.hp - b.hp);
-                            attackUnit(u, adjEnemies[0]);
-                            acted = true;
-                            break;
-                        }
-                    }
-                    if (!acted) this.resolveEnemyAction({ actionKey: 'ADVANCE_CONTROL' });
-                }
-                break;
-            case 'TARGET_LEADER':
-                {
-                    let acted = false;
-                    for (const u of friends) {
-                        const adjEnemies = enemies.filter(e => HexUtils.hexDistance(u.q, u.r, e.q, e.r) <= 1);
-                        const leader = adjEnemies.find(e => e.type === 'leader');
-                        if (leader) {
-                            attackUnit(u, leader);
-                            acted = true;
-                            break;
-                        }
-                    }
-                    if (!acted) this.resolveEnemyAction({ actionKey: 'ADVANCE_CONTROL' });
-                }
-                break;
-            case 'TRADE':
-                {
-                    let bestAction = null;
-                    for (const u of friends) {
-                        const adjEnemies = enemies.filter(e => HexUtils.hexDistance(u.q, u.r, e.q, e.r) <= 1);
-                        for (const e of adjEnemies) {
-                            let dmg = u.atk;
-                            const t = this.tiles.get(`${e.q},${e.r}`);
-                            if (t && t.type === 'cover') dmg = Math.max(0, dmg - 1);
-                            if (e.hp <= dmg) {
-                                bestAction = { u, e };
-                                break;
-                            }
-                        }
-                        if (bestAction) break;
-                    }
-
-                    if (bestAction) {
-                        attackUnit(bestAction.u, bestAction.e);
-                    } else {
-                        this.resolveEnemyAction({ actionKey: 'STRIKE_WEAK' });
-                    }
-                }
-                break;
-            case 'FORTIFY':
-                {
-                    let acted = false;
-                    for (const u of friends) {
-                        const tile = this.tiles.get(`${u.q},${u.r}`);
-                        if (tile.type === 'cover' && u.hp < u.maxHp) {
-                            u.hp = Math.min(u.hp + 1, u.maxHp);
-                            this.showFloatingText(u.sprite.x, u.sprite.y, "+1 HP", '#00ff00');
-                            acted = true;
-                            break;
-                        }
-                    }
-                    if (!acted) {
-                        this.resolveEnemyAction({ actionKey: 'FLANK' });
-                    }
-                }
-                break;
-            case 'REGROUP':
-                {
-                    const leader = friends.find(u => u.type === 'leader');
-                    if (leader) {
-                        friends.forEach(u => {
-                            if (u === leader) return;
-                            if (HexUtils.hexDistance(u.q, u.r, leader.q, leader.r) > 1) {
-                                const path = this.findPath(u, leader.q, leader.r);
-                                if (path && path.length > 0) moveUnit(u, path[0].q, path[0].r);
-                            }
-                        });
-                    } else {
-                        this.resolveEnemyAction({ actionKey: 'ADVANCE_CONTROL' });
-                    }
-                }
-                break;
-            case 'WAIT':
-                {
-                    friends.forEach(u => u.atk += 1);
-                    this.resolveEnemyAction({ actionKey: 'STRIKE_WEAK' });
-                    this.time.delayedCall(250, () => friends.forEach(u => u.atk -= 1));
-                }
-                break;
-            case 'DENY_CONTROL':
-                {
-                    let done = false;
-                    const neighbors = HexUtils.hexNeighbors(0, 0);
-                    for (const n of neighbors) {
-                        const u = this.units.get(`${n.q},${n.r}`);
-                        if (u && u.faction === this.enemyFaction) {
-                            if (!this.units.has("0,0")) {
-                                moveUnit(u, 0, 0);
-                                done = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (!done) this.resolveEnemyAction({ actionKey: 'ADVANCE_CONTROL' });
-                }
-                break;
-            case 'BLOCK':
-                {
-                    const u = this.units.get("0,0");
-                    if (u && u.faction === this.enemyFaction) {
-                        this.influenceBlocked = true;
-                        this.showFloatingText(this.boardOriginX, this.boardOriginY, "Influence Blocked", '#ff0000');
-                    } else {
-                        this.resolveEnemyAction({ actionKey: 'ADVANCE_CONTROL' });
-                    }
-                }
-                break;
+            case 'PRESS': // Treat PRESS as general advance now
+            case 'FLANK': // Treat FLANK as general advance
+            case 'DENY_CONTROL': // Prioritize control, but move everyone
             case 'PUSH_OFF':
-                {
-                    const u = this.units.get("0,0");
-                    if (u && u.faction === this.playerFaction) {
-                        const neighbors = HexUtils.hexNeighbors(0, 0);
-                        const enemyAdj = neighbors.some(n => {
-                            const unit = this.units.get(`${n.q},${n.r}`);
-                            return unit && unit.faction === this.enemyFaction;
-                        });
-
-                        if (enemyAdj) {
-                            const free = neighbors.find(n => !this.units.has(`${n.q},${n.r}`) && this.tiles.get(`${n.q},${n.r}`).type !== 'blocked');
-                            if (free) {
-                                this.units.delete("0,0");
-                                u.q = free.q; u.r = free.r;
-                                this.units.set(`${free.q},${free.r}`, u);
-                                const pos = HexUtils.axialToPixel(free.q, free.r, this.hexSize);
-                                u.sprite.x = this.boardOriginX + pos.x;
-                                u.sprite.y = this.boardOriginY + pos.y;
-                                this.showFloatingText(u.sprite.x, u.sprite.y, "Pushed!", '#ff0000');
+            case 'BLOCK':
+                // General Advance Logic for all units
+                friends.forEach(u => {
+                    const path = this.findPath(u, 0, 0);
+                    if (path && path.length > 0) {
+                        const targetKey = `${path[0].q},${path[0].r}`;
+                        if (!this.units.has(targetKey)) {
+                            moveUnit(u, path[0].q, path[0].r);
+                        } else {
+                            const occupant = this.units.get(targetKey);
+                            if (occupant.faction === this.playerFaction) {
+                                attackUnit(u, occupant);
                             }
                         }
-                    } else {
-                        this.resolveEnemyAction({ actionKey: 'ADVANCE_CONTROL' });
                     }
-                }
+                });
+                break;
+
+            case 'STRIKE_WEAK':
+            case 'TARGET_LEADER':
+            case 'TRADE':
+            case 'WAIT': // Aggressive wait? Just attack.
+                // General Attack Logic
+                friends.forEach(u => {
+                    const adjEnemies = enemies.filter(e => HexUtils.hexDistance(u.q, u.r, e.q, e.r) <= 1);
+                    if (adjEnemies.length > 0) {
+                        // Default target weak
+                        adjEnemies.sort((a, b) => a.hp - b.hp);
+                        attackUnit(u, adjEnemies[0]);
+                    } else {
+                        // If can't attack, move
+                        const path = this.findPath(u, 0, 0);
+                        if (path && path.length > 0 && !this.units.has(`${path[0].q},${path[0].r}`)) {
+                            moveUnit(u, path[0].q, path[0].r);
+                        }
+                    }
+                });
+                break;
+
+            case 'FORTIFY':
+            case 'REGROUP':
+                // Defensive / Regroup
+                friends.forEach(u => {
+                    // If hurt and on cover, heal
+                    const tile = this.tiles.get(`${u.q},${u.r}`);
+                    if (tile && tile.type === 'cover' && u.hp < u.maxHp) {
+                        u.hp++;
+                        this.showFloatingText(u.sprite.x, u.sprite.y, "+1 HP", '#00ff00');
+                    } else {
+                        // Else move to leader or control
+                        const path = this.findPath(u, 0, 0);
+                        if (path && path.length > 0 && !this.units.has(`${path[0].q},${path[0].r}`)) {
+                            moveUnit(u, path[0].q, path[0].r);
+                        }
+                    }
+                });
                 break;
         }
     }
@@ -1527,8 +1376,8 @@ export default class GameScene extends Phaser.Scene {
         // Reset Unit State
         this.units.forEach(u => u.hasActed = false);
 
-        // Player has 1 action: Select Unit -> Move OR Attack -> End Turn
-        this.playerHasActed = false;
+        // Player has action points (all units can move)
+        // this.playerHasActed = false; // Removed for Squad Turn
 
         this.updateUI();
         this.showFloatingText(this.boardOriginX, this.boardOriginY, `TURN ${this.currentTurn}`, '#ffffff');
@@ -1564,7 +1413,7 @@ export default class GameScene extends Phaser.Scene {
         }
 
         // --- PLAYER TURN ---
-        if (this.fsm.getState() === GameStates.PLAYER_SELECT_UNIT && !this.playerHasActed) {
+        if (this.fsm.getState() === GameStates.PLAYER_SELECT_UNIT) {
             const unit = this.units.get(`${q},${r}`);
             if (unit && unit.faction === this.playerFaction && !unit.hasActed) {
                 this.selectUnit(unit);
@@ -1669,19 +1518,12 @@ export default class GameScene extends Phaser.Scene {
 
     finishPlayerAction(unit, logMsg) {
         unit.hasActed = true;
-        this.playerHasActed = true;
+        // this.playerHasActed = true; // Removed
         this.clearSelection();
         this.logAction(logMsg);
 
-        // Auto End Turn? No, user explicitly said "End of Player's Turn" is a step.
-        // It's better UX to let them click "End Turn" or have a delay.
-        // "3. End of Player's Turn: Influence is scored..."
-        // I'll auto-end for flow if 1 action only, or button. 
-        // User request: "The player selects one unit to act... End of Player's turn".
-        // Let's rely on the End Turn Button to confirm "I am done".
-        // But since they can't do anything else, I'll allow the button to be clickable now.
-        this.fsm.transition(GameStates.PLAYER_WAIT); // Wait for End Turn click
-        this.showFloatingText(this.endTurnBtn.x, this.endTurnBtn.y - 50, "Click End Turn", '#00ff00');
+        // Return to selection for next unit
+        this.fsm.transition(GameStates.PLAYER_SELECT_UNIT);
     }
 
     endPlayerTurn() {

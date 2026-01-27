@@ -257,7 +257,7 @@ export default class UIScene extends Phaser.Scene {
 
         // Skip/Restart Logic
         let charIndex = 0;
-        const typeSpeed = 30;
+        const typeSpeed = 5;
 
         const typeEvent = this.time.addEvent({
             delay: typeSpeed,
