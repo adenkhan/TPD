@@ -161,6 +161,8 @@ export default class GameScene extends Phaser.Scene {
                     this.showFloatingText(this.endTurnBtn.x, this.endTurnBtn.y - 50, "Place all units first!", '#ff5555');
                     return;
                 }
+                if (this.fsm.getState() === GameStates.END_PLAYER_TURN) return; // Prevent double clicks
+
                 if (this.fsm.getState() !== GameStates.ENEMY_TURN) {
                     if (this.hand.length > 0 && !this.turnFlags.cardPlayed) {
                         this.showFloatingText(this.endTurnBtn.x, this.endTurnBtn.y - 50, "Must play 1 card!", '#ff5555');
@@ -1112,10 +1114,10 @@ export default class GameScene extends Phaser.Scene {
 
         console.log(`Enemy Turn: Drawing ${card.name} (${card.actionKey})`);
 
-        this.time.delayedCall(800, () => {
+        this.time.delayedCall(300, () => {
             this.resolveEnemyAction(card);
 
-            this.time.delayedCall(500, () => {
+            this.time.delayedCall(300, () => {
                 // Check enemy influence
                 const controlKeys = ["0,0", "2,-2"];
                 let occupiedCount = 0;
@@ -1182,7 +1184,7 @@ export default class GameScene extends Phaser.Scene {
                 targets: unit.sprite,
                 x: this.boardOriginX + pos.x,
                 y: this.boardOriginY + pos.y,
-                duration: 250
+                duration: 200
             });
             this.logAction(`Enemy ${unit.type} moved to ${q},${r}`);
         };
@@ -1620,7 +1622,7 @@ export default class GameScene extends Phaser.Scene {
             targets: unit.sprite,
             x: this.boardOriginX + pos.x,
             y: this.boardOriginY + pos.y,
-            duration: 250
+            duration: 200
         });
 
         this.finishPlayerAction(unit, `Moved to ${q},${r}`);
