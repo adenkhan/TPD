@@ -544,13 +544,13 @@ export default class UIScene extends Phaser.Scene {
 
     createInspectorPanel() {
         const x = 20;
-        const y = this.cameras.main.height - 180;
+        const y = this.scale.height - 180;
         const w = 220;
         const h = 160;
 
-        this.inspectorContainer = this.add.container(x, y).setVisible(false);
+        this.inspectorContainer = this.add.container(x, y).setVisible(false).setDepth(1100);
 
-        const bg = this.add.rectangle(0, 0, w, h, 0x000000, 0.8).setOrigin(0).setStrokeStyle(2, 0x888888);
+        const bg = this.add.rectangle(0, 0, w, h, 0x000000, 0.9).setOrigin(0).setStrokeStyle(2, 0x888888);
         const title = this.add.text(10, 10, 'UNIT INSPECTOR', { fontSize: '14px', fill: '#888' });
 
         this.inspectorName = this.add.text(10, 30, '', { fontSize: '20px', fill: '#fff', fontStyle: 'bold' });
@@ -558,6 +558,7 @@ export default class UIScene extends Phaser.Scene {
         this.inspectorPerk = this.add.text(10, 120, '', { fontSize: '14px', fill: '#ffff00', wordWrap: { width: w - 20 } });
 
         this.inspectorContainer.add([bg, title, this.inspectorName, this.inspectorStats, this.inspectorPerk]);
+        console.log("Inspector Panel Created at", x, y);
     }
 
     showUnitDetails(unit) {
@@ -577,12 +578,13 @@ export default class UIScene extends Phaser.Scene {
         );
 
         // Perk
-        let perkDesc = "";
-        switch (unit.perk) {
+        const perk = unit.perk || 'none';
+        let perkDesc = "No special perk.";
+        switch (perk) {
             case 'skirmisher': perkDesc = "Skirmisher: Attack after move."; break;
             case 'anchor': perkDesc = "Anchor: Defensive bonus on control."; break;
             case 'command': perkDesc = "Command: Draw cards."; break;
         }
-        this.inspectorPerk.setText(`[${unit.perk.toUpperCase()}]\n${perkDesc}`);
+        this.inspectorPerk.setText(`[${perk.toUpperCase()}]\n${perkDesc}`);
     }
 }
