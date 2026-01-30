@@ -1437,6 +1437,7 @@ export default class GameScene extends Phaser.Scene {
             if (targetUnit && targetUnit === this.selectedUnit) {
                 // Cancel selection
                 this.clearSelection();
+                this.fsm.transition(GameStates.PLAYER_SELECT_UNIT);
                 return;
             }
 
@@ -1468,6 +1469,7 @@ export default class GameScene extends Phaser.Scene {
 
             // If clicked elsewhere, deselect
             this.clearSelection();
+            this.fsm.transition(GameStates.PLAYER_SELECT_UNIT);
         }
     }
 
