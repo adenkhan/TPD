@@ -9,6 +9,7 @@ export default class IntroScene extends Phaser.Scene {
         this.load.image('karachi_map', 'karachi_map.png');
         this.load.image('pin', 'pin_red.png'); // Using 'pin_red.png' as requested or fallback
         this.load.image('lore_slide', 'lore_slide.png');
+        this.load.video('intro_comic', 'comic.mp4');
     }
 
     create(data) {
@@ -132,8 +133,46 @@ export default class IntroScene extends Phaser.Scene {
         btn.on('pointerout', () => bg.setFillStyle(0x00aa00));
 
         btn.on('pointerdown', () => {
-            this.showLoreSlide();
+            this.playIntroVideo();
         });
+    }
+
+    playIntroVideo() {
+        const width = this.cameras.main.width;
+        const height = this.cameras.main.height;
+
+        // Create Video
+        const video = this.add.video(width / 2, height / 2, 'intro_comic');
+
+        if (!video) {
+            console.error("Video asset 'intro_comic' not found or failed to create.");
+            this.showLoreSlide();
+            return;
+        }
+
+        // Scale to Cover Screen
+        const scaleX = width / video.width;
+        const scaleY = height / video.height;
+        const scale = Math.max(scaleX, scaleY);
+        video.setScale(scale);
+
+        video.setDepth(1000); // Ensure it's on top of everything
+
+        // Play
+        video.play();
+
+        // Completion Handler
+        const onComplete = () => {
+            video.stop();
+            video.destroy();
+            this.showLoreSlide();
+        };
+
+        video.on('complete', onComplete);
+
+        // Optional: Click to Skip
+        video.setInteractive();
+        video.on('pointerdown', onComplete);
     }
 
     showMissionModal() {
