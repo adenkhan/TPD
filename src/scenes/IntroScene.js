@@ -141,47 +141,103 @@ export default class IntroScene extends Phaser.Scene {
         const width = this.cameras.main.width;
         const height = this.cameras.main.height;
 
-        // Background for letterboxing (Black)
+        // 1. Black Background (Letterbox)
         const bg = this.add.rectangle(width / 2, height / 2, width, height, 0x000000);
         bg.setDepth(999);
+        bg.setInteractive(); // Blocks clicks to underlying elements
 
-        // Create Video
+        // 2. Video Object
         const video = this.add.video(width / 2, height / 2, 'intro_comic');
 
         if (!video) {
-            console.error("Video asset 'intro_comic' not found or failed to create.");
+            console.error("Video asset 'intro_comic' failed.");
             bg.destroy();
             this.showLoreSlide();
             return;
         }
 
-        // Scale to Fit Screen (Letterbox/Pillarbox)
-        const scaleX = width / video.width;
-        const scaleY = height / video.height;
-        const scale = Math.min(scaleX, scaleY);
-        video.setScale(scale);
+        video.setDepth(1000);
 
-        video.setDepth(1000); // Ensure it's on top of everything
+        // 3. UI Container (Skip & Fullscreen)
+        const uiGroup = this.add.container(0, 0);
+        uiGroup.setDepth(1001);
 
-        // Play
-        video.play();
+        // Skip Button (Bottom Right)
+        const skipBtn = this.add.text(width - 20, height - 20, '[ SKIP ]', {
+            fontSize: '20px', fill: '#ffffff', backgroundColor: '#000000', padding: { x: 10, y: 5 }
+        }).setOrigin(1, 1).setInteractive({ useHandCursor: true });
 
-        // Completion Handler
+        // Fullscreen Button (Top Right)
+        const fsBtn = this.add.text(width - 20, 20, '[ FULLSCREEN ]', {
+            fontSize: '20px', fill: '#ffffff', backgroundColor: '#000000', padding: { x: 10, y: 5 }
+        }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+
+        uiGroup.add([skipBtn, fsBtn]);
+
+        // 4. Logic Functions
+        const updateScale = () => {
+            if (!video.width || !video.height) return;
+            const w = this.scale.width;
+            const h = this.scale.height;
+
+            // Re-center bg
+            bg.setPosition(w / 2, h / 2);
+            bg.setSize(w, h);
+
+            // Scale video (Fit)
+            const scale = Math.min(w / video.width, h / video.height);
+            video.setScale(scale);
+            video.setPosition(w / 2, h / 2);
+
+            // Reposition UI
+            skipBtn.setPosition(w - 20, h - 20);
+            fsBtn.setPosition(w - 20, 20);
+        };
+
         const onComplete = () => {
+            // Cleanup events
+            this.scale.off('resize', updateScale);
+            video.off('locked', updateScale);
+
             video.stop();
             video.destroy();
             bg.destroy();
+            uiGroup.destroy();
+
             this.showLoreSlide();
         };
 
+        // 5. Event Listeners
+
+        // Metadata loaded (size available)
+        video.on('locked', () => {
+            updateScale();
+            video.play();
+        });
+
+        // Try playing immediately
+        video.play();
+
+        // If metadata is already there
+        if (video.width) updateScale();
+
+        // Handle window resize
+        this.scale.on('resize', updateScale);
+
+        // Completion
         video.on('complete', onComplete);
 
-        // Optional: Click to Skip
-        video.setInteractive();
-        video.on('pointerdown', onComplete);
+        // Skip Action
+        skipBtn.on('pointerdown', () => onComplete());
 
-        bg.setInteractive();
-        bg.on('pointerdown', onComplete);
+        // Fullscreen Action
+        fsBtn.on('pointerdown', () => {
+            if (this.scale.isFullscreen) {
+                this.scale.stopFullscreen();
+            } else {
+                this.scale.startFullscreen();
+            }
+        });
     }
 
     showMissionModal() {
