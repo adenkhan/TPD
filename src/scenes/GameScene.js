@@ -260,7 +260,7 @@ export default class GameScene extends Phaser.Scene {
 
     deployEnemy() {
         console.log("Deploying Enemy...");
-        const enemyComp = this.registry.get('enemyComposition') || { leader: 1, heavy: 1, light: 1 };
+        const enemyComp = this.registry.get('enemyComposition') || { leader: 1, heavy: 3, light: 3 };
         const queue = [];
         for (let i = 0; i < enemyComp.leader; i++) queue.push('leader');
         for (let i = 0; i < enemyComp.heavy; i++) queue.push('heavy');

@@ -12,8 +12,8 @@ export default class CompositionScene extends Phaser.Scene {
         this.center = { x: this.width / 2, y: this.height / 2 };
 
         // Config
-        this.scoreCap = 16;
-        this.maxUnits = 10;
+        this.scoreCap = 21;
+        this.maxUnits = 12;
         this.costs = {
             leader: 4,
             heavy: 3,
@@ -22,8 +22,8 @@ export default class CompositionScene extends Phaser.Scene {
 
         // Limits
         this.limits = {
-            heavy: 3,
-            light: 7
+            heavy: 5,
+            light: 8
         };
 
         // State
@@ -62,7 +62,7 @@ export default class CompositionScene extends Phaser.Scene {
             fontStyle: 'bold'
         }).setOrigin(0.5);
 
-        this.pointsText = this.add.text(this.center.x, 130, "Points: 0 / 16", {
+        this.pointsText = this.add.text(this.center.x, 130, "Points: 0 / 21", {
             fontSize: '28px',
             color: '#aaaaaa'
         }).setOrigin(0.5);
@@ -212,8 +212,8 @@ export default class CompositionScene extends Phaser.Scene {
         // User asked for "2 heavy 2 light" explicitly (plus leader).
         const enemyComp = {
             leader: 1,
-            heavy: 2,
-            light: 2
+            heavy: 3,
+            light: 3
         };
         this.registry.set('enemyComposition', enemyComp);
 
@@ -241,7 +241,7 @@ export default class CompositionScene extends Phaser.Scene {
 
         // Steps
         const steps = [
-            "1. RECRUIT: Assemble your squad based on Points (16 max).",
+            "1. RECRUIT: Assemble your squad based on Points (21 max).",
             "2. DEPLOY: Place your units on the blue starting hexes.",
             "3. OBJECTIVE: Capture the YELLOW Control Point (0,0).",
             "4. TERRAIN: Black = Blocked | Green = Cover (-1 Dmg).",
