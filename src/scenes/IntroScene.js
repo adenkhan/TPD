@@ -141,19 +141,24 @@ export default class IntroScene extends Phaser.Scene {
         const width = this.cameras.main.width;
         const height = this.cameras.main.height;
 
+        // Background for letterboxing (Black)
+        const bg = this.add.rectangle(width / 2, height / 2, width, height, 0x000000);
+        bg.setDepth(999);
+
         // Create Video
         const video = this.add.video(width / 2, height / 2, 'intro_comic');
 
         if (!video) {
             console.error("Video asset 'intro_comic' not found or failed to create.");
+            bg.destroy();
             this.showLoreSlide();
             return;
         }
 
-        // Scale to Cover Screen
+        // Scale to Fit Screen (Letterbox/Pillarbox)
         const scaleX = width / video.width;
         const scaleY = height / video.height;
-        const scale = Math.max(scaleX, scaleY);
+        const scale = Math.min(scaleX, scaleY);
         video.setScale(scale);
 
         video.setDepth(1000); // Ensure it's on top of everything
@@ -165,6 +170,7 @@ export default class IntroScene extends Phaser.Scene {
         const onComplete = () => {
             video.stop();
             video.destroy();
+            bg.destroy();
             this.showLoreSlide();
         };
 
@@ -173,6 +179,9 @@ export default class IntroScene extends Phaser.Scene {
         // Optional: Click to Skip
         video.setInteractive();
         video.on('pointerdown', onComplete);
+
+        bg.setInteractive();
+        bg.on('pointerdown', onComplete);
     }
 
     showMissionModal() {
