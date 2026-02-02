@@ -176,7 +176,21 @@ export default class IntroScene extends Phaser.Scene {
 
         // 4. Logic Functions
         const updateScale = () => {
-            if (!video.width || !video.height) return;
+            // Try Phaser dimensions first, then DOM dimensions
+            let vw = video.width;
+            let vh = video.height;
+
+            // Fallback to DOM element if Phaser hasn't updated yet
+            if ((!vw || !vh) && video.video) {
+                vw = video.video.videoWidth;
+                vh = video.video.videoHeight;
+            }
+
+            if (!vw || !vh) {
+                // console.log("Video dimensions not yet available.");
+                return;
+            }
+
             const w = this.scale.width;
             const h = this.scale.height;
 
@@ -184,8 +198,8 @@ export default class IntroScene extends Phaser.Scene {
             bg.setPosition(w / 2, h / 2);
             bg.setSize(w, h);
 
-            // Scale video (Fit)
-            const scale = Math.min(w / video.width, h / video.height);
+            // Scale video (Fit / Contain)
+            const scale = Math.min(w / vw, h / vh);
             video.setScale(scale);
             video.setPosition(w / 2, h / 2);
 
@@ -213,6 +227,16 @@ export default class IntroScene extends Phaser.Scene {
         video.on('locked', () => {
             updateScale();
             video.play();
+        });
+
+        // Ensure scale updates when playing starts (metadata might be ready then)
+        video.on('play', () => {
+            updateScale();
+        });
+
+        // Use standard metadata event too
+        video.on('metadata', () => {
+            updateScale();
         });
 
         // Try playing immediately

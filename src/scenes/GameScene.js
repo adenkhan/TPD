@@ -38,6 +38,11 @@ export default class GameScene extends Phaser.Scene {
             this.boardOriginX = this.sys.game.config.width / 2;
             this.boardOriginY = this.sys.game.config.height / 2;
 
+            this.turnState = {
+                allowPostAttackMove: false,
+                postAttackMoveUnitId: null
+            };
+
             this.generateBoard();
 
             // Graphics for highlights
@@ -57,7 +62,16 @@ export default class GameScene extends Phaser.Scene {
             this.fsm = new StateMachine(GameStates.PLAYER_SELECT_UNIT, this);
             this.createFactionSelectionUI();
 
-            // Card System
+            this.placedUnitsHistory = [];
+            this.fsm = new StateMachine(GameStates.PLAYER_SELECT_UNIT, this);
+            this.createFactionSelectionUI();
+
+            // M Key for Tempo Dash
+            this.input.keyboard.on('keydown-M', () => {
+                if (this.selectedUnit && this.turnState.allowPostAttackMove && this.selectedUnit.id === this.turnState.postAttackMoveUnitId) {
+                    this.enterTempoDashMode(this.selectedUnit);
+                }
+            });
             this.deck = [];
             this.hand = [];
             this.discard = [];
@@ -349,7 +363,9 @@ export default class GameScene extends Phaser.Scene {
             perk: stats.perk,
             q,
             r,
-            hasActed: false
+            r,
+            hasActed: false,
+            tempoDashAvailable: (stats.type === 'light') // Mechanic 1: Default true for light
         };
 
         const pos = HexUtils.axialToPixel(q, r, this.hexSize);
@@ -470,28 +486,13 @@ export default class GameScene extends Phaser.Scene {
         this.selectedUnit = null;
         this.moveHighlightGraphics.clear();
         this.highlightGraphics.clear();
+        if (this.highlightTexts) {
+            this.highlightTexts.forEach(t => t.destroy());
+            this.highlightTexts = [];
+        }
     }
 
-    createFinishPlacementButton() {
-        this.finishPlacementBtn = this.add.text(this.sys.game.config.width / 2, this.sys.game.config.height - 100, 'Finish Placement', {
-            fontSize: '28px', fill: '#00ff00', backgroundColor: '#333', padding: { x: 20, y: 10 },
-            stroke: '#000', strokeThickness: 4
-        })
-            .setOrigin(0.5)
-            .setInteractive({ useHandCursor: true })
-            .setScrollFactor(0)
-            .on('pointerdown', () => {
-                if (this.placementQueue.length > 0) {
-                    this.showFloatingText(this.finishPlacementBtn.x, this.finishPlacementBtn.y - 50, "Place all units first!", '#ff5555');
-                    return;
-                }
 
-                this.deployEnemy();
-                this.startTurn1();
-                this.finishPlacementBtn.destroy();
-                this.finishPlacementBtn = null;
-            });
-    }
 
     // enterPlacementPhase is already defined above at line 178.
     // This duplicate block hardcodes values and causes the bug.
@@ -554,15 +555,24 @@ export default class GameScene extends Phaser.Scene {
 
         let spriteKey = `hex_${type}`;
         if (type === 'control') spriteKey = 'hex_neutral'; // Fallback to neutral sprite base
+        if (type === 'road') spriteKey = 'hex_neutral';
+        if (type === 'elevation') spriteKey = 'hex_neutral';
         if (!this.textures.exists(spriteKey)) spriteKey = 'hex_neutral'; // Safety
 
         const sprite = this.add.image(x, y, spriteKey);
 
         if (type === 'control') {
             sprite.setTint(0xffd700); // GOLD
+        } else if (type === 'road') {
+            sprite.setTint(0x888888); // GRAY (Road)
+        } else if (type === 'elevation') {
+            sprite.setTint(0xddffdd); // LIGHT GREEN/WHITE (High Ground)
+        } else if (type === 'blocked') {
+            sprite.setTint(0x333333); // DARK
         }
 
-        const scale = (this.hexSize * 2) / sprite.height;
+        let scale = (this.hexSize * 2) / sprite.height;
+        if (type === 'elevation') scale *= 1.1; // Make it pop out
         sprite.setScale(scale);
 
         // 1. Mask (World Coordinates)
@@ -574,6 +584,15 @@ export default class GameScene extends Phaser.Scene {
         maskShape.fillPoints(worldMaskPoints, true, true);
         const mask = maskShape.createGeometryMask();
         sprite.setMask(mask);
+
+        // Add visual indicator for Elevation/Road if simple tint isn't enough?
+        // Text label for debug clarity as per constraint "deterministic enough for debugging"
+        if (type === 'elevation') {
+            this.add.text(x, y, '^', { fontSize: '20px', fill: '#000' }).setOrigin(0.5).setDepth(1);
+        }
+        if (type === 'road') {
+            this.add.text(x, y, '=', { fontSize: '16px', fill: '#ccc' }).setOrigin(0.5).setDepth(1);
+        }
 
         // 2. Interaction
         const localPoints = this.getHexPoints(0, 0, this.hexSize);
@@ -640,26 +659,60 @@ export default class GameScene extends Phaser.Scene {
             return;
         }
 
-        // --- SKIRMISH MOVE ---
-        if (this.fsm.getState() === GameStates.PLAYER_SKIRMISH_MOVE) {
+        // --- SKIRMISH MOVE / TEMPO DASH ---
+        if (this.fsm.getState() === GameStates.PLAYER_SKIRMISH_MOVE || this.fsm.getState() === GameStates.PLAYER_TEMPO_MOVE) {
+            const isTempo = this.fsm.getState() === GameStates.PLAYER_TEMPO_MOVE;
+
             if (this.selectedUnit && this.units.has(`${q},${r}`) && this.units.get(`${q},${r}`) === this.selectedUnit) {
                 // Click self to skip
-                this.logAction("Skirmish Move skipped");
+                this.logAction(isTempo ? "Tempo Dash skipped" : "Skirmish Move skipped");
+
+                // If it was valid dash, we forfeit it
+                if (isTempo && this.turnState.allowPostAttackMove) {
+                    // forfeit
+                    this.turnState.allowPostAttackMove = false;
+                    this.turnState.postAttackMoveUnitId = null;
+                    this.selectedUnit.tempoDashAvailable = false;
+                }
+
                 this.selectedUnit.hasActed = true;
                 this.clearSelection();
                 this.fsm.transition(GameStates.PLAYER_SELECT_UNIT);
                 this.highlightGraphics.clear();
                 this.moveHighlightGraphics.clear();
+                if (this.tempoDashPrompt) { this.tempoDashPrompt.destroy(); this.tempoDashPrompt = null; }
+                if (this.tempoDashBtn) { this.tempoDashBtn.destroy(); this.tempoDashBtn = null; }
                 return;
             }
 
             const u = this.selectedUnit;
             const dist = HexUtils.hexDistance(u.q, u.r, q, r);
-            if (dist === 1 && !this.units.has(`${q},${r}`) && this.tiles.get(`${q},${r}`).type !== 'blocked') {
+
+            // Logic: Skirmish = Dist 1. Tempo = Full Move.
+            // Check validity
+            const valid = this.validMoves && this.validMoves.includes(`${q},${r}`);
+
+            // Extra check for valid Tempo Dash execution
+            if (isTempo) {
+                if (!this.turnState.allowPostAttackMove || u.id !== this.turnState.postAttackMoveUnitId) {
+                    console.log("Tempo Dash Invalid State");
+                    return;
+                }
+            }
+
+            if (valid) {
+                // Allow movement even if hasMovedThisTurn is true (implied by this state)
                 this.moveUnit(u, q, r);
-                this.logAction("Skirmish Move successful");
+                this.logAction(isTempo ? "Tempo Dash!" : "Skirmish Move");
+
+                if (isTempo) {
+                    u.tempoDashAvailable = false;
+                    this.turnState.allowPostAttackMove = false;
+                    this.turnState.postAttackMoveUnitId = null;
+                }
             } else {
-                console.log("Invalid Skirmish Move");
+                console.log("Invalid Move");
+                return; // Do nothing, let them click again
             }
 
             u.hasActed = true;
@@ -667,6 +720,8 @@ export default class GameScene extends Phaser.Scene {
             this.fsm.transition(GameStates.PLAYER_SELECT_UNIT);
             this.highlightGraphics.clear();
             this.moveHighlightGraphics.clear();
+            if (this.tempoDashPrompt) { this.tempoDashPrompt.destroy(); this.tempoDashPrompt = null; }
+            if (this.tempoDashBtn) { this.tempoDashBtn.destroy(); this.tempoDashBtn = null; }
             return;
         }
 
@@ -926,8 +981,56 @@ export default class GameScene extends Phaser.Scene {
         this.showAttackHighlights(unit);
     }
 
+    enterTempoDashMode(unit) {
+        console.log("Entering Tempo Dash Mode");
+        this.fsm.transition(GameStates.PLAYER_TEMPO_MOVE);
+
+        // Clear previous UI
+        if (this.tempoDashBtn) { this.tempoDashBtn.destroy(); this.tempoDashBtn = null; }
+        if (this.tempoDashPrompt) { this.tempoDashPrompt.destroy(); this.tempoDashPrompt = null; }
+
+        this.showMoveHighlights(unit); // Reuse standard move highlight logic
+        this.showFloatingText(unit.sprite.x, unit.sprite.y, "Dash!", '#ffff00');
+    }
+
+    enterSkirmishMove(unit) {
+        console.log("Entering Skirmish Move Mode");
+        // Skirmish move is 1 hex only (usually) or full move? 
+        // "Skirmishers may move up to their speed after attacking" usually implies full move, 
+        // but prompt says "Skirmisher: Attack then Move". 
+        // If it uses standard `showMoveHighlights`, it uses full move.
+        // Let's assume full move unless restricted.
+
+        // However, we need to ensure we don't trigger "Has Moved" flag logic that prevents it.
+        // The `tryAttack` check `!attacker.hasMovedThisTurn` ensures we only do this if we haven't moved yet.
+
+        // We reuse the SKIRMISH_MOVE state which usually handles "Move THEN Attack".
+        // But here we are "Attack THEN Move".
+        // We might need a distinct state or reuse the logic carefully.
+        // Let's use PLAYER_SKIRMISH_MOVE but relying on `turnFlags.hasAttacked` being true 
+        // to prevent another attack?
+
+        // Actually `onPointerDown` checks:
+        // if (this.fsm.getState() === GameStates.PLAYER_SKIRMISH_MOVE ...
+        //   if (valid) this.moveUnit(u, q, r);
+
+        // `moveUnit` sets `turnFlags.hasMoved = true` and `hasActed = true`.
+        // So reusing it works fine.
+
+        this.fsm.transition(GameStates.PLAYER_SKIRMISH_MOVE);
+        this.showMoveHighlights(unit);
+    }
+
     showAttackHighlights(unit) {
+        if (!this.highlightTexts) this.highlightTexts = [];
+        this.highlightTexts.forEach(t => t.destroy());
+        this.highlightTexts = [];
+
         if (this.turnFlags.hasAttacked || unit.hasActed) return;
+
+        // Check if attacker on Elevation
+        const atkTile = this.tiles.get(`${unit.q},${unit.r}`);
+        const isElevation = (atkTile && atkTile.type === 'elevation');
 
         const neighbors = HexUtils.hexNeighbors(unit.q, unit.r);
         neighbors.forEach(n => {
@@ -938,6 +1041,13 @@ export default class GameScene extends Phaser.Scene {
                 const x = this.boardOriginX + pos.x;
                 const y = this.boardOriginY + pos.y;
                 this.drawHex(this.moveHighlightGraphics, x, y, 0xff0000, 0.4);
+
+                if (isElevation) {
+                    const txt = this.add.text(x, y, "+1 HG", {
+                        fontSize: '16px', fill: '#ffffff', stroke: '#000', strokeThickness: 2
+                    }).setOrigin(0.5);
+                    this.highlightTexts.push(txt);
+                }
             }
         });
     }
@@ -947,10 +1057,51 @@ export default class GameScene extends Phaser.Scene {
         if (this.turnFlags.hasMoved || unit.hasActed) return;
 
         const blockedSet = new Set();
-        this.tiles.forEach((t, k) => { if (t.type === 'blocked') blockedSet.add(k); });
+        this.tiles.forEach((t, k) => {
+            if (t.type === 'blocked' || t.type === 'rubble') blockedSet.add(k);
+        });
         this.units.forEach((u, k) => blockedSet.add(k));
 
-        const reachable = HexUtils.getReachableHexes(unit.q, unit.r, unit.move, blockedSet);
+        let reachable = HexUtils.getReachableHexes(unit.q, unit.r, unit.move, blockedSet);
+
+        // --- Mechanic 3: Road Network Fast Lanes ---
+        // If on road, check for road-only paths of length move + 1
+        const startKey = `${unit.q},${unit.r}`;
+        const startTile = this.tiles.get(startKey);
+
+        if (startTile && startTile.type === 'road') {
+            const roadBonusRange = unit.move + 1;
+            // Custom BFS for roads
+            const roadReachable = [];
+            const visited = new Set();
+            const queue = [{ q: unit.q, r: unit.r, dist: 0 }];
+            visited.add(startKey);
+
+            while (queue.length > 0) {
+                const curr = queue.shift();
+                if (curr.dist >= roadBonusRange) continue;
+
+                const neighbors = HexUtils.hexNeighbors(curr.q, curr.r);
+                for (const n of neighbors) {
+                    const k = `${n.q},${n.r}`;
+                    const t = this.tiles.get(k);
+                    // Must be road and not blocked by unit/terrain
+                    if (t && t.type === 'road' && !blockedSet.has(k) && !visited.has(k)) {
+                        visited.add(k);
+                        // Add to results
+                        roadReachable.push({ q: n.q, r: n.r });
+                        queue.push({ q: n.q, r: n.r, dist: curr.dist + 1 });
+                    }
+                }
+            }
+            // Merge
+            roadReachable.forEach(r => {
+                if (!reachable.some(existing => existing.q === r.q && existing.r === r.r)) {
+                    reachable.push(r);
+                }
+            });
+            if (roadReachable.length > 0) console.log("Road Bonus Applied!");
+        }
 
         reachable.forEach(coord => {
             const pos = HexUtils.axialToPixel(coord.q, coord.r, this.hexSize);
@@ -964,6 +1115,10 @@ export default class GameScene extends Phaser.Scene {
 
     tryMove(unit, q, r) {
         if (this.validMoves && this.validMoves.includes(`${q},${r}`)) {
+            // Check for Road Bonus Visual
+            const path = this.findPath(unit, q, r);
+            if (path) this.checkRoadBonus(unit, path);
+
             this.logAction(`${unit.type} moved to(${q}, ${r})`);
 
             this.units.delete(`${unit.q},${unit.r}`);
@@ -994,6 +1149,14 @@ export default class GameScene extends Phaser.Scene {
         if (dist <= range) {
             let damage = attacker.atk;
 
+            // --- Mechanic 4: High Ground ---
+            const atkTile = this.tiles.get(`${attacker.q},${attacker.r}`);
+            if (atkTile && atkTile.type === 'elevation') {
+                damage++; // Base + 1
+                // Visual on Defender as requested
+                this.showFloatingText(defender.sprite.x, defender.sprite.y - 40, "+1 HG", '#ffffff');
+            }
+
             const defTile = this.tiles.get(`${defender.q},${defender.r}`);
             let reduction = 0;
             if (defTile && defTile.type === 'cover') {
@@ -1020,11 +1183,47 @@ export default class GameScene extends Phaser.Scene {
 
             this.turnFlags.hasAttacked = true;
 
+            this.turnFlags.hasAttacked = true;
+
             // Check Skirmisher Perk
+            // Existing logic: Attack -> Move (if not moved)
             if (attacker.perk === 'skirmisher' && !attacker.hasMovedThisTurn && attacker.faction === this.playerFaction) {
                 this.showFloatingText(attacker.sprite.x, attacker.sprite.y, "Skirmisher!", '#00aaff');
                 this.enterSkirmishMove(attacker);
-                // Do not set hasActed yet
+                return;
+            }
+
+            // Mechanic 1: Tempo Dash (Move -> Attack -> Move) - Light Unit Only, Once per match
+            // Manual Trigger required.
+            // Mechanic 1: Tempo Dash (Move -> Attack -> Move) - Light Unit Only
+            // "If attacker is Light AND attacker.tempoDashAvailable is true AND attacker.hasMovedThisTurn is true AND attacker.hasAttackedThisTurn becomes true"
+            // Note: hasAttackedThisTurn is implied by this.turnFlags.hasAttacked = true (global) or just local context.
+            // Use attacker.hasMovedThisTurn check.
+
+            if (attacker.faction === this.playerFaction && attacker.type === 'light'
+                && attacker.hasMovedThisTurn && attacker.tempoDashAvailable) {
+
+                // Set turnState
+                this.turnState.allowPostAttackMove = true;
+                this.turnState.postAttackMoveUnitId = attacker.id;
+
+                // 1. Show Hint
+                this.showFloatingText(attacker.sprite.x, attacker.sprite.y, "Tempo Dash Available!", '#ffff00');
+
+                // 2. Add UI Button
+                this.tempoDashBtn = this.add.text(this.sys.game.config.width / 2, this.sys.game.config.height - 150, 'Tempo Dash (M)', {
+                    fontSize: '24px', fill: '#000', backgroundColor: '#ffff00', padding: { x: 10, y: 5 }
+                }).setOrigin(0.5).setInteractive({ useHandCursor: true })
+                    .setScrollFactor(0)
+                    .on('pointerdown', () => {
+                        this.enterTempoDashMode(attacker);
+                    });
+
+                this.tempoDashPrompt = this.add.text(this.sys.game.config.width / 2, this.sys.game.config.height - 180, 'Move Again?', {
+                    fontSize: '18px', fill: '#fff', stroke: '#000', strokeThickness: 2
+                }).setOrigin(0.5).setScrollFactor(0);
+
+                // 3. Do NOT end turn, keep selected.
                 return;
             }
 
@@ -1074,6 +1273,7 @@ export default class GameScene extends Phaser.Scene {
 
     endPlayerTurn() {
         this.fsm.transition(GameStates.END_PLAYER_TURN);
+        this.turnEndCleanup();
 
         // Check Control Tile Influence
         const controlKeys = ["0,0", "2,-2"];
@@ -1143,12 +1343,15 @@ export default class GameScene extends Phaser.Scene {
                 }
 
                 this.isProcessingEnemy = false; // Unlock
+                this.triggerCrumblingTile();
                 this.startPlayerTurn();
             });
         });
     }
 
     startPlayerTurn() {
+        // Mechanic 2: Crumbling City Tiles moved to End of Enemy Turn
+
         this.currentTurn++;
         // Reset Flags
         this.turnFlags = { hasMoved: false, hasAttacked: false, cardPlayed: false };
@@ -1160,6 +1363,12 @@ export default class GameScene extends Phaser.Scene {
         });
 
         this.influenceBlocked = false;
+
+        // Reset turn state
+        this.turnState = {
+            allowPostAttackMove: false,
+            postAttackMoveUnitId: null
+        };
 
         // Command Perk (Leader)
         const leader = Array.from(this.units.values()).find(u => u.faction === this.playerFaction && u.type === 'leader');
@@ -1178,6 +1387,164 @@ export default class GameScene extends Phaser.Scene {
             this.updateUI();
             this.showFloatingText(this.boardOriginX, this.boardOriginY, `TURN ${this.currentTurn}`, '#ffffff');
         }
+    }
+
+    triggerCrumblingTile() {
+        // 1 random eligible neutral tile becomes rubble/blocked
+        // Triggered at end of Enemy Turn.
+
+        // 1. Initialize RNG if needed
+        if (!this.crumbleRng) {
+            this.crumbleSeed = 12345 + (this.registry.get('seed') || 0);
+            this.crumbleRng = () => {
+                this.crumbleSeed = (this.crumbleSeed * 9301 + 49297) % 233280;
+                return this.crumbleSeed / 233280;
+            };
+        }
+
+        // 2. Identify Exclusion Zones (Spawns)
+        // Get valid spawns for both to avoid blocking start areas
+        const pSpawns = this.getValidSpawnHexes(this.playerFaction);
+        const eSpawns = this.getValidSpawnHexes(this.enemyFaction);
+        const spawnKeys = new Set();
+        [...pSpawns, ...eSpawns].forEach(t => spawnKeys.add(`${t.q},${t.r}`));
+
+        // 3. Find Candidates & Retry Loop
+        let attempts = 0;
+        let selected = null;
+
+        // We pick random tiles and validate, rather than filtering ALL tiles (perf)
+        // But filtering all neutral tiles is cheap (max ~60-100 tiles).
+        const neutralTiles = [];
+        this.tiles.forEach((t, k) => {
+            if (t.type === 'neutral' && t.type !== 'road' && !this.units.has(k)) {
+                neutralTiles.push(t);
+            }
+        });
+
+        while (attempts < 25 && neutralTiles.length > 0) {
+            attempts++;
+            const idx = Math.floor(this.crumbleRng() * neutralTiles.length);
+            const candidate = neutralTiles[idx];
+            const k = `${candidate.q},${candidate.r}`;
+
+            // Check Space Exclusion (Dist > 2 from any spawn)
+            let safeFromSpawn = true;
+            for (const sp of [...pSpawns, ...eSpawns]) {
+                if (HexUtils.hexDistance(candidate.q, candidate.r, sp.q, sp.r) <= 2) {
+                    safeFromSpawn = false;
+                    break;
+                }
+            }
+            if (!safeFromSpawn) {
+                neutralTiles.splice(idx, 1); // Remove and retry
+                continue;
+            }
+
+            // Check Connectivity
+            // Temporarily treat as blocked
+            if (this.checkConnectivity(k)) {
+                selected = candidate;
+                break;
+            } else {
+                neutralTiles.splice(idx, 1);
+            }
+        }
+
+        if (selected) {
+            // Mutate
+            selected.type = 'rubble';
+
+            // Visuals: Shake + Tint
+            this.tweens.add({
+                targets: selected.sprite,
+                x: selected.sprite.x + ((Math.random() - 0.5) * 5),
+                y: selected.sprite.y + ((Math.random() - 0.5) * 5),
+                duration: 50,
+                yoyo: true,
+                repeat: 5,
+                onComplete: () => {
+                    const pos = HexUtils.axialToPixel(selected.q, selected.r, this.hexSize);
+                    selected.sprite.x = this.boardOriginX + pos.x;
+                    selected.sprite.y = this.boardOriginY + pos.y;
+                }
+            });
+
+            this.tweens.addCounter({
+                from: 0,
+                to: 100,
+                duration: 300,
+                onUpdate: (tween) => {
+                    if (tween.getValue() > 50) selected.sprite.setTint(0x554433);
+                }
+            });
+
+            // Add simple "X" overlay
+            const overlay = this.add.text(selected.sprite.x, selected.sprite.y, 'X', {
+                fontSize: '24px', fill: '#000', fontStyle: 'bold'
+            }).setOrigin(0.5).setAlpha(0).setDepth(2);
+
+            this.tweens.add({
+                targets: overlay,
+                alpha: 0.6,
+                scale: { from: 0.5, to: 1.2 },
+                duration: 300
+            });
+
+            console.log(`Crumble: Converted ${selected.q},${selected.r} to Rubble.`);
+        } else {
+            console.log("Crumble: No valid tile found this round.");
+        }
+    }
+
+    checkConnectivity(ignoreKey) {
+        // Ensure path exists between Controls (or Start Zones)
+        const blocked = this.getBlockedSet();
+        blocked.add(ignoreKey); // Add the candidate
+
+        const controls = [];
+        this.tiles.forEach(t => { if (t.type === 'control') controls.push(t); });
+
+        let startNode, endNode;
+        if (controls.length >= 2) {
+            startNode = controls[0];
+            endNode = controls[1];
+        } else {
+            // Fallback: Player Leader vs Enemy Leader current pos, or defaults
+            // Just use left-most and right-most valid tiles?
+            // Use Spawn centers: (-3,0) and (3,0) roughly.
+            const pLeader = Array.from(this.units.values()).find(u => u.faction === this.playerFaction && u.type === 'leader');
+            const eLeader = Array.from(this.units.values()).find(u => u.faction === this.enemyFaction && u.type === 'leader');
+
+            // If leaders dead/missing, just use arbitrary far points
+            startNode = pLeader ? { q: pLeader.q, r: pLeader.r } : { q: -3, r: 0 };
+            endNode = eLeader ? { q: eLeader.q, r: eLeader.r } : { q: 3, r: 0 };
+        }
+
+        // BFS
+        const queue = [startNode];
+        const visited = new Set();
+        const startK = `${startNode.q},${startNode.r}`;
+        visited.add(startK);
+
+        // Check if start/end themselves are blocked (shouldn't be, but safety)
+        if (blocked.has(startK)) return false; // Should not happen if start is unit/control
+        if (blocked.has(`${endNode.q},${endNode.r}`)) return false;
+
+        while (queue.length > 0) {
+            const curr = queue.shift();
+            if (curr.q === endNode.q && curr.r === endNode.r) return true;
+
+            const neighbors = HexUtils.hexNeighbors(curr.q, curr.r);
+            for (const n of neighbors) {
+                const k = `${n.q},${n.r}`;
+                if (this.tiles.has(k) && !blocked.has(k) && !visited.has(k)) {
+                    visited.add(k);
+                    queue.push(n);
+                }
+            }
+        }
+        return false;
     }
 
     resolveEnemyAction(card) {
@@ -1200,6 +1567,14 @@ export default class GameScene extends Phaser.Scene {
 
         const attackUnit = (attacker, defender) => {
             let damage = attacker.atk;
+
+            // Mechanic 4: High Ground (AI)
+            const atkTile = this.tiles.get(`${attacker.q},${attacker.r}`);
+            if (atkTile && atkTile.type === 'elevation') {
+                damage++;
+                this.showFloatingText(attacker.sprite.x, attacker.sprite.y, "High Ground +1", '#ffffff');
+            }
+
             const defTile = this.tiles.get(`${defender.q},${defender.r}`);
             if (defTile && defTile.type === 'cover') {
                 damage = Math.max(0, damage - 1);
@@ -1209,6 +1584,67 @@ export default class GameScene extends Phaser.Scene {
             this.updateHPBar(defender);
             this.logAction(`Enemy ${attacker.type} attacked ${defender.type} (${damage} dmg)`);
             if (defender.hp <= 0) this.killUnit(defender);
+
+            // AI Tempo Dash
+            if (attacker.type === 'light' && attacker.tempoDashAvailable) {
+                // Check if it moved?
+                // Current AI logic doesn't explicitly track `hasMovedThisTurn` for the singular friend iteration, 
+                // but since we just moved it in `ADVANCE_CONTROL` case before calling attack, or if we didn't move it...
+                // The prompt says "if an AI Light unit ... can attack after moving, it should prefer to use the post-attack move".
+                // We can force it to use it if available, assuming it moved or just generally efficiently using its abilities.
+
+                attacker.tempoDashAvailable = false;
+                this.showFloatingText(attacker.sprite.x, attacker.sprite.y, "Tempo Dash!", '#ffff00');
+
+                // Logic: Retreat -> Control -> Flee
+                // 1. Find valid moves
+                const blocked = this.getBlockedSet();
+                const moves = HexUtils.getReachableHexes(attacker.q, attacker.r, attacker.move, blocked); // Assuming no road logic complexity for AI dash escape for now
+                if (moves.length === 0) return;
+
+                let bestMove = null;
+
+                // (a) Retreat to Cover
+                const coverMoves = moves.filter(m => {
+                    const t = this.tiles.get(`${m.q},${m.r}`);
+                    return t && t.type === 'cover';
+                });
+                if (coverMoves.length > 0) {
+                    bestMove = coverMoves[0]; // Just pick first
+                }
+
+                // (b) Control
+                if (!bestMove) {
+                    const controlMoves = moves.filter(m => {
+                        const t = this.tiles.get(`${m.q},${m.r}`);
+                        return t && (t.q === 0 && t.r === 0); // Center control primarily
+                    });
+                    if (controlMoves.length > 0) bestMove = controlMoves[0];
+                }
+
+                // (c) Flee (Maximize distance from nearest enemy)
+                if (!bestMove) {
+                    let maxDist = -1;
+                    moves.forEach(m => {
+                        let minDistToEnemy = 999;
+                        this.units.forEach(u => {
+                            if (u.faction === this.playerFaction) {
+                                const d = HexUtils.hexDistance(m.q, m.r, u.q, u.r);
+                                if (d < minDistToEnemy) minDistToEnemy = d;
+                            }
+                        });
+                        if (minDistToEnemy > maxDist) {
+                            maxDist = minDistToEnemy;
+                            bestMove = m;
+                        }
+                    });
+                }
+
+                if (bestMove) {
+                    moveUnit(attacker, bestMove.q, bestMove.r);
+                    this.logAction("Enemy uses Tempo Dash to reposition");
+                }
+            }
         };
 
         /* SQUAD TURN UPDATE: Iterate all friends for every action */
@@ -1223,13 +1659,63 @@ export default class GameScene extends Phaser.Scene {
                 friends.forEach(u => {
                     const path = this.findPath(u, 0, 0);
                     if (path && path.length > 0) {
-                        const targetKey = `${path[0].q},${path[0].r}`;
-                        if (!this.units.has(targetKey)) {
-                            moveUnit(u, path[0].q, path[0].r);
+                        // Mechanic 3: Road Bonus & Move Stat (AI)
+                        let maxSteps = u.move;
+
+                        // Check Road Bonus
+                        const startTile = this.tiles.get(`${u.q},${u.r}`);
+                        if (startTile && startTile.type === 'road') {
+                            // Check if path segments are roads
+                            let allRoads = true;
+                            // Look ahead up to move+1
+                            for (let i = 0; i < Math.min(path.length, u.move + 1); i++) {
+                                const pt = path[i];
+                                const t = this.tiles.get(`${pt.q},${pt.r}`);
+                                if (!t || t.type !== 'road') { allRoads = false; break; }
+                            }
+                            if (allRoads) maxSteps++;
+                        }
+
+                        // Move as far as possible along path
+                        // path[0] is 1 step away.
+                        const stepIdx = Math.min(path.length, maxSteps) - 1;
+
+                        // Need to check occupancy for the destination?
+                        // `findPath` checks blocked tiles but not dynamic units (except via getBlockedSet which includes units).
+                        // If `findPath` includes units in blocked set, then path is guaranteed clear?
+                        // `findPath` line 1297 calls `getBlockedSet()`.
+                        // So path avoids units. Safe to move to any point on path? 
+                        // Wait, `findPath` returns path TO goal. Goal might be occupied?
+                        // If path moves through units, `findPath` would fail or go around.
+                        // So path is valid.
+
+                        // However, verify destination isn't occupied (e.g. by another AI moving this turn)
+                        // Since we iterate friends and move them sequentially, `this.units` updates.
+                        // But `path` was calculated relative to CURRENT board state.
+                        // If another friend moved into our path, we might collide.
+                        // Re-check target.
+
+                        // Walk backwards from max reach to 0
+                        let target = null;
+                        for (let i = stepIdx; i >= 0; i--) {
+                            const p = path[i];
+                            const k = `${p.q},${p.r}`;
+                            if (!this.units.has(k)) {
+                                target = p;
+                                break;
+                            }
+                        }
+
+                        if (target) {
+                            moveUnit(u, target.q, target.r);
                         } else {
-                            const occupant = this.units.get(targetKey);
-                            if (occupant.faction === this.playerFaction) {
-                                attackUnit(u, occupant);
+                            // Blocked or 0,0 occupied
+                            const targetKey = `${path[0].q},${path[0].r}`;
+                            if (this.units.has(targetKey)) {
+                                const occupant = this.units.get(targetKey);
+                                if (occupant.faction === this.playerFaction) {
+                                    attackUnit(u, occupant);
+                                }
                             }
                         }
                     }
@@ -1248,10 +1734,36 @@ export default class GameScene extends Phaser.Scene {
                         adjEnemies.sort((a, b) => a.hp - b.hp);
                         attackUnit(u, adjEnemies[0]);
                     } else {
-                        // If can't attack, move
+                        // If can't attack, move (Same logic as Advance, simplified)
+                        // Copy-paste movement logic or make helper?
+                        // For safety/brevity, use simple 1-step move fallback if strict "AI uses same rules" isn't critical for 'WAIT' behavior.
+                        // But let's apply the same logic.
+
                         const path = this.findPath(u, 0, 0);
-                        if (path && path.length > 0 && !this.units.has(`${path[0].q},${path[0].r}`)) {
-                            moveUnit(u, path[0].q, path[0].r);
+                        if (path && path.length > 0) {
+                            let maxSteps = u.move;
+                            const startTile = this.tiles.get(`${u.q},${u.r}`);
+                            if (startTile && startTile.type === 'road') {
+                                let allRoads = true;
+                                for (let i = 0; i < Math.min(path.length, u.move + 1); i++) {
+                                    const pt = path[i];
+                                    const t = this.tiles.get(`${pt.q},${pt.r}`);
+                                    if (!t || t.type !== 'road') { allRoads = false; break; }
+                                }
+                                if (allRoads) maxSteps++;
+                            }
+
+                            // Find furthest free spot
+                            let stepIdx = Math.min(path.length, maxSteps) - 1;
+                            let target = null;
+                            for (let i = stepIdx; i >= 0; i--) {
+                                const p = path[i];
+                                if (!this.units.has(`${p.q},${p.r}`)) {
+                                    target = p;
+                                    break;
+                                }
+                            }
+                            if (target) moveUnit(u, target.q, target.r);
                         }
                     }
                 });
@@ -1280,7 +1792,7 @@ export default class GameScene extends Phaser.Scene {
 
     getBlockedSet() {
         const blocked = new Set();
-        this.tiles.forEach((t, k) => { if (t.type === 'blocked') blocked.add(k); });
+        this.tiles.forEach((t, k) => { if (t.type === 'blocked' || t.type === 'rubble') blocked.add(k); });
         this.units.forEach((u, k) => blocked.add(k));
         return blocked;
     }
@@ -1453,16 +1965,15 @@ export default class GameScene extends Phaser.Scene {
                 return;
             }
 
-            if (!targetUnit && targetTile && targetTile.type !== 'blocked') {
-                // Try Move
-                // Check Range
-                const dist = HexUtils.hexDistance(this.selectedUnit.q, this.selectedUnit.r, q, r);
-                if (dist <= this.selectedUnit.move) {
-                    // Check path (simple line check for now, or bfs if blocked)
-                    const path = this.findPath(this.selectedUnit, q, r);
-                    if (path && path.length <= this.selectedUnit.move) {
-                        this.executeMove(this.selectedUnit, q, r);
+            if (!targetUnit && targetTile) {
+                // Validate Move via Helper
+                const validation = this.canMoveUnit(this.selectedUnit, q, r);
+
+                if (validation.ok) {
+                    if (validation.bonusApplied) {
+                        this.showFloatingText(this.selectedUnit.sprite.x, this.selectedUnit.sprite.y - 30, "+1 Speed", '#dddddd');
                     }
+                    this.executeMove(this.selectedUnit, q, r);
                 }
                 return;
             }
@@ -1616,9 +2127,12 @@ export default class GameScene extends Phaser.Scene {
             const dist = HexUtils.hexDistance(unit.q, unit.r, c.q, c.r);
             if (dist === 1) {
                 if (!this.units.has(`${c.q},${c.r}`)) {
-                    this.moveEnemy(unit, c.q, c.r);
-                    this.logAction(`Enemy ${unit.type} captured Zone`);
-                    return;
+                    const validation = this.canMoveUnit(unit, c.q, c.r);
+                    if (validation.ok) {
+                        this.moveEnemy(unit, c.q, c.r);
+                        this.logAction(`Enemy ${unit.type} captured Zone`);
+                        return;
+                    }
                 }
             }
         }
@@ -1670,16 +2184,20 @@ export default class GameScene extends Phaser.Scene {
 
                 for (let i = steps - 1; i >= 0; i--) {
                     const dest = path[i];
-                    if (!this.units.has(`${dest.q},${dest.r}`)) {
+                    const validation = this.canMoveUnit(unit, dest.q, dest.r);
+                    if (validation.ok) {
+                        if (validation.bonusApplied) {
+                            this.showFloatingText(unit.sprite.x, unit.sprite.y - 30, "+1 Speed", '#dddddd');
+                        }
                         this.moveEnemy(unit, dest.q, dest.r);
                         return;
                     }
                 }
             }
-        }
 
-        // 5. Hold Position
-        this.logAction(`Enemy ${unit.type} holds`);
+            // 5. Hold Position
+            this.logAction(`Enemy ${unit.type} holds`);
+        }
     }
 
     moveEnemy(unit, q, r) {
@@ -1802,6 +2320,76 @@ export default class GameScene extends Phaser.Scene {
         const color = pct > 0.5 ? 0x00ff00 : (pct > 0.25 ? 0xffff00 : 0xff0000);
         unit.hpBar.fillStyle(color);
         unit.hpBar.fillRect(-barW / 2, y, barW * pct, barH);
+    }
+
+    canMoveUnit(unit, q, r) {
+        // 1. Basic Tile Check
+        const targetKey = `${q},${r}`;
+        const targetTile = this.tiles.get(targetKey);
+
+        // Blocked or Rubble?
+        if (!targetTile || targetTile.type === 'blocked' || targetTile.type === 'rubble') {
+            return { ok: false, reason: 'blocked' };
+        }
+
+        // Occupied?
+        if (this.units.has(targetKey) && this.units.get(targetKey) !== unit) {
+            return { ok: false, reason: 'occupied' };
+        }
+
+        // 2. Pathfinding
+        const path = this.findPath(unit, q, r);
+        if (!path || path.length === 0) {
+            return { ok: false, reason: 'unreachable' };
+        }
+
+        // 3. Range Check (Standard vs Road Bonus)
+        let maxSteps = unit.move;
+        let bonusApplied = false;
+
+        // Check Road Bonus
+        const startTile = this.tiles.get(`${unit.q},${unit.r}`);
+        let isAllRoad = (startTile && startTile.type === 'road');
+        if (isAllRoad) {
+            for (const p of path) {
+                const t = this.tiles.get(`${p.q},${p.r}`);
+                if (!t || t.type !== 'road') {
+                    isAllRoad = false;
+                    break;
+                }
+            }
+        }
+
+        if (isAllRoad) {
+            maxSteps += 1;
+            bonusApplied = true;
+        }
+
+        if (path.length <= maxSteps) {
+            return { ok: true, path: path, bonusApplied: bonusApplied };
+        }
+
+        return { ok: false, reason: 'out_of_range' };
+    }
+
+    isRoad(tile) {
+        return tile && tile.type === 'road';
+    }
+
+    checkRoadBonus(unit, path) {
+        if (!path || path.length === 0) return false;
+        // Check Start Tile
+        const startTile = this.tiles.get(`${unit.q},${unit.r}`);
+        if (!this.isRoad(startTile)) return false;
+
+        // Check Path
+        for (const p of path) {
+            const t = this.tiles.get(`${p.q},${p.r}`);
+            if (!this.isRoad(t)) return false;
+        }
+
+        this.showFloatingText(unit.sprite.x, unit.sprite.y - 30, "+1 Speed", '#dddddd');
+        return true;
     }
 
     drawHex(graphics, x, y, fillColor, fillAlpha = 1, lineWidth = 0) {

@@ -102,6 +102,105 @@ export class MapGenerator {
             }
         }
 
+        // 5. Place High Ground (Elevation) - Mechanic 4
+        // Scattered 4-7 tiles. Not adjacent to each other.
+        // Cannot overlap Control, Cover, Road (not placed yet), Blocked (later), Spawns.
+        // Spawn = Dist >= 4. So max Dist <= 3.
+        // Control = Dist 0. So Dist >= 1.
+        // Valid Range: Dist 1 to 3.
+
+        let placedElevation = 0;
+        const targetElevation = rng.nextInt(4, 7);
+        let elevationSafety = 0;
+        const elevationSet = new Set(); // To check adjacency
+
+        while (placedElevation < targetElevation && elevationSafety < 200) {
+            elevationSafety++;
+            const idx = rng.nextInt(0, allCoords.length - 1);
+            const c = allCoords[idx];
+            const k = `${c.q},${c.r}`;
+            const dist = HexUtils.hexDistance(c.q, c.r, 0, 0);
+
+            // Constraints
+            // 1. Valid Zone (Ring 1-3)
+            if (dist < 1 || dist > 3) continue;
+
+            // 2. Must be Neutral (avoids Cover/Control)
+            if (tiles.get(k) !== 'neutral') continue;
+
+            // 3. Not Adjacent to existing Elevation (Scattered)
+            let adjacentToElevation = false;
+            const neighbors = HexUtils.hexNeighbors(c.q, c.r);
+            for (const n of neighbors) {
+                if (elevationSet.has(`${n.q},${n.r}`)) {
+                    adjacentToElevation = true;
+                    break;
+                }
+            }
+            if (adjacentToElevation) continue;
+
+            // Place
+            tiles.set(k, 'elevation');
+            elevationSet.add(k);
+            placedElevation++;
+        }
+
+        // 6. Place Roads (Fast Lanes) - Mechanic 3
+        // Contiguous chain of 6-10 tiles in Ring 2-3 (Dist 2-3 from 0,0)
+        // This avoids Control (Dist 0-1) and Spawn (Dist >=4)
+
+        let roadPlaced = 0;
+        let roadSafety = 0;
+
+        while (roadPlaced === 0 && roadSafety < 50) {
+            roadSafety++;
+
+            // 1. Pick Start Node in Ring 2 or 3
+            const candidates = allCoords.filter(c => {
+                const d = HexUtils.hexDistance(c.q, c.r, 0, 0);
+                const k = `${c.q},${c.r}`;
+                return (d >= 2 && d <= 3) && tiles.get(k) === 'neutral';
+            });
+
+            if (candidates.length === 0) continue;
+
+            const start = candidates[rng.nextInt(0, candidates.length - 1)];
+            const roadChain = [start];
+            const roadSet = new Set();
+            roadSet.add(`${start.q},${start.r}`);
+
+            // 2. Grow Chain (Random Walker)
+            let curr = start;
+            const targetLength = rng.nextInt(6, 10);
+
+            for (let i = 0; i < targetLength; i++) {
+                const neighbors = HexUtils.hexNeighbors(curr.q, curr.r);
+                // Filter valid extensions
+                const validNeighbors = neighbors.filter(n => {
+                    const d = HexUtils.hexDistance(n.q, n.r, 0, 0);
+                    const k = `${n.q},${n.r}`;
+                    return (d >= 2 && d <= 3) &&
+                        tiles.get(k) === 'neutral' &&
+                        !roadSet.has(k);
+                });
+
+                if (validNeighbors.length > 0) {
+                    const next = validNeighbors[rng.nextInt(0, validNeighbors.length - 1)];
+                    roadChain.push(next);
+                    roadSet.add(`${next.q},${next.r}`);
+                    curr = next;
+                } else {
+                    break; // Stuck, stop here
+                }
+            }
+
+            // 3. Commit if long enough
+            if (roadChain.length >= 6) {
+                roadChain.forEach(c => tiles.set(`${c.q},${c.r}`, 'road'));
+                roadPlaced = roadChain.length;
+            }
+        }
+
         // 5. Place Blocked (Scattered but prefer edges slightly?)
         // Just random is fine given high density (30%)
         let placedBlocked = 0;
