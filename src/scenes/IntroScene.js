@@ -152,7 +152,7 @@ export default class IntroScene extends Phaser.Scene {
         if (!video) {
             console.error("Video asset 'intro_comic' failed.");
             bg.destroy();
-            this.showLoreSlide();
+            this.showFactionSelect();
             return;
         }
 
@@ -204,7 +204,7 @@ export default class IntroScene extends Phaser.Scene {
             bg.destroy();
             uiGroup.destroy();
 
-            this.showLoreSlide();
+            this.showFactionSelect();
         };
 
         // 5. Event Listeners
